@@ -1,6 +1,13 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_web3/flutter_web3.dart';
 import 'package:get/get.dart';
+import 'package:web3dart/web3dart.dart';
+import 'package:convert/convert.dart';
+import 'package:flutter_awesome_buttons/flutter_awesome_buttons.dart';
+
+import 'abi.dart';
 
 void main() {
   runApp(MyApp());
@@ -9,7 +16,7 @@ void main() {
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
-      GetMaterialApp(title: 'Flutter Web3 Example', home: Home());
+      GetMaterialApp(title: 'NFT Mint Web Site with Flutter', home: Home());
 }
 
 class HomeController extends GetxController {
@@ -23,7 +30,7 @@ class HomeController extends GetxController {
 
   bool wcConnected = false;
 
-  static const OPERATING_CHAIN = 56;
+  static const OPERATING_CHAIN = 3;
 
   final wc = WalletConnectProvider.binance();
 
@@ -39,18 +46,6 @@ class HomeController extends GetxController {
 
       update();
     }
-  }
-
-  connectWC() async {
-    await wc.connect();
-    if (wc.connected) {
-      currentAddress = wc.accounts.first;
-      currentChain = 56;
-      wcConnected = true;
-      web3wc = Web3Provider.fromWalletConnect(wc);
-    }
-
-    update();
   }
 
   clear() {
@@ -76,29 +71,37 @@ class HomeController extends GetxController {
     }
   }
 
-  getLastestBlock() async {
-    print(await provider!.getLastestBlock());
-    print(await provider!.getLastestBlockWithTransaction());
+  String nftContractAddress = '0x56Fb0412E8d8E2916AB14a35F87c4732780aD379';
+
+  getSymbol() async {
+    final busd = Contract(
+      nftContractAddress,
+      CONTRACT_ABI,
+      provider!,
+    );
+    String symbol = await busd.call<String>('symbol');
+    print(symbol);
+    Get.snackbar("Token Symbol", symbol);
   }
 
-  testProvider() async {
-    final rpcProvider = JsonRpcProvider('https://bsc-dataseed.binance.org/');
-    print(rpcProvider);
-    print(await rpcProvider.getNetwork());
-  }
+  mintNFT() async {
+    var contract = DeployedContract(
+        ContractAbi.fromJson(CONTRACT_ABI, nftContractAddress),
+        EthereumAddress.fromHex(nftContractAddress));
 
-  test() async {}
+    var data =
+        hex.encode(contract.function("mint").encodeCall([BigInt.from(1)]));
 
-  testSwitchChain() async {
-    await ethereum!.walletSwitchChain(97, () async {
-      await ethereum!.walletAddChain(
-        chainId: 97,
-        chainName: 'Binance Testnet',
-        nativeCurrency:
-            CurrencyParams(name: 'BNB', symbol: 'BNB', decimals: 18),
-        rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545/'],
-      );
-    });
+    final tx = await provider!.getSigner().sendTransaction(
+          TransactionRequest(
+              to: '0x56Fb0412E8d8E2916AB14a35F87c4732780aD379',
+              data: "0x" + data,
+              value: BigInt.from(10000000000000000),
+              gasLimit: BigInt.from(3000000)),
+        );
+
+    final receipt = await tx.wait();
+    Get.snackbar("Recipt", receipt.blockHash);
   }
 
   @override
@@ -115,55 +118,46 @@ class Home extends StatelessWidget {
     return GetBuilder<HomeController>(
       init: HomeController(),
       builder: (h) => Scaffold(
-        body: Center(
-          child: Column(children: [
-            Container(height: 10),
-            Builder(builder: (_) {
-              var shown = '';
-              if (h.isConnected && h.isInOperatingChain)
-                shown = 'You\'re connected!';
-              else if (h.isConnected && !h.isInOperatingChain)
-                shown = 'Wrong chain! Please connect to BSC. (56)';
-              else if (Ethereum.isSupported)
-                return OutlinedButton(
-                    child: Text('Connect'), onPressed: h.connectProvider);
-              else
-                shown = 'Your browser is not supported!';
+        body: Stack(
+          children: [
+            Image.asset("assets/back.jpg"),
+            Container(
+              child: Center(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(height: 10),
+                      Builder(builder: (_) {
+                        var shown = '';
+                        if (h.isConnected && h.isInOperatingChain)
+                          shown =
+                              "Your Address : " + h.currentAddress.toString();
+                        else if (h.isConnected && !h.isInOperatingChain)
+                          shown = 'Wrong chain! Please connect to Ropsten. (3)';
+                        else if (Ethereum.isSupported)
+                          return OutlinedButton(
+                              child: Text('Connect'),
+                              onPressed: h.connectProvider);
+                        else
+                          shown = 'Your browser is not supported!';
 
-              return Text(shown,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20));
-            }),
-            Container(height: 30),
-            if (h.isConnected && h.isInOperatingChain) ...[
-              TextButton(
-                  onPressed: h.getLastestBlock,
-                  child: Text('get lastest block')),
-              Container(height: 10),
-              TextButton(
-                  onPressed: h.testProvider,
-                  child: Text('test binance rpc provider')),
-              Container(height: 10),
-              TextButton(onPressed: h.test, child: Text('test')),
-              Container(height: 10),
-              TextButton(
-                  onPressed: h.testSwitchChain,
-                  child: Text('test switch chain')),
-            ],
-            Container(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Wallet Connect connected: ${h.wcConnected}'),
-                Container(width: 10),
-                OutlinedButton(
-                    child: Text('Connect to WC'), onPressed: h.connectWC)
-              ],
+                        return Text(shown,
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12));
+                      }),
+                      Container(height: 30),
+                      if (h.isConnected && h.isInOperatingChain) ...[
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: PrimaryButton(
+                              title: "Mint", onPressed: h.mintNFT),
+                        ),
+                      ],
+                      Container(height: 30),
+                    ]),
+              ),
             ),
-            Container(height: 30),
-            if (h.wcConnected && h.wc.connected) ...[
-              Text(h.wc.walletMeta.toString()),
-            ],
-          ]),
+          ],
         ),
       ),
     );
